@@ -21,10 +21,9 @@ import {
 import { debounce } from "../../../utils.js";
 import { extension_settings } from "../../../extensions.js";
 
-const extensionName = "SillyTavern-Anchor-Search";
-
-const API_ENDPOINT = "https://anchor123.onrender.com";
-const MARES_ENDPOINT = `${API_ENDPOINT}/mares.json`;
+const API_ENDPOINT = "https://raw.githubusercontent.com/mia13165/SillyTavern-Anchor-Search/refs/heads/main";
+const MARES_ENDPOINT = `${API_ENDPOINT}/cards.json`;
+const FILTERS_ENDPOINT = `${API_ENDPOINT}/filters.json`;
 
 const CATEGORIES = [];
 
@@ -94,7 +93,13 @@ async function loadSettings() {
 
 async function downloadCharacter(cardPath) {
     try {
-        const imageUrl = `${API_ENDPOINT}/cards/${cardPath}`;
+        const character = mlpcharacters.find(char => char.path === cardPath);
+        
+        if (!character || !character.image_url) {
+            throw new Error('Character image URL not found');
+        }
+        
+        const imageUrl = character.image_url;
         const response = await fetch(imageUrl);
         if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
         
@@ -285,9 +290,6 @@ async function handleCharacterListClick(event) {
 async function handleCharacterPreview(listItem) {
     const path = listItem.querySelector('.download-btn').getAttribute('data-path');
     try {
-        const response = await fetch(`${API_ENDPOINT}/cards/${path}`);
-        if (!response.ok) throw new Error('Failed to fetch character data');
-        
         const character = mlpcharacters.find(char => char.path === path);
         if (character) {
             const modal = createPreviewModal(character);
@@ -385,7 +387,7 @@ async function fetchCharactersBySearch({ searchTerm, searchType = 'name', page =
             try {
                 const [maresResponse, filtersResponse] = await Promise.all([
                     fetch(MARES_ENDPOINT, { cache: "no-cache" }),
-                    fetch(`${API_ENDPOINT}/assets/filters.json`, { cache: "no-cache" })
+                    fetch(FILTERS_ENDPOINT, { cache: "no-cache" })
                 ]);
 
                 if (!maresResponse.ok) {
@@ -424,7 +426,7 @@ async function fetchCharactersBySearch({ searchTerm, searchType = 'name', page =
                 return {
                     ...value,
                     path: key,
-                    url: `${API_ENDPOINT}/cards/${key}`,
+                    url: value.image_url || 'img/ai4.png',
                     name: value.name || 'Unknown',
                     author: value.author || 'Unknown',
                     description: value.description || '',
