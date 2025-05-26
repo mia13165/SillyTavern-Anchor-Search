@@ -864,3 +864,27 @@
 .sort-select {
     padding: 0 12px;
 }
+
+.page-input-container {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+#pageNumberInput {
+    width: 40px;
+    text-align: center;
+    padding: 4px;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background: var(--background-secondary);
+    color: var(--text-primary);
+}
+
+.page-separator {
+    color: var(--text-secondary);
+}
+
+#totalPages {
+    color: var(--text-secondary);
+}

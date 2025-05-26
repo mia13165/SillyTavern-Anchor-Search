@@ -51,6 +51,8 @@ let lastFetchTime = 0;
 let batchMode = false;
 let selectedPaths = [];
 const CACHE_DURATION = 5 * 60 * 1000;
+let currentPage = 1;
+let totalPages = 1;
 
 function sanitizeText(text) {
     if (!text) return '';
@@ -571,16 +573,23 @@ function applySorting(characters) {
 
 function paginateResults(characters, page) {
     const itemsPerPage = extension_settings.mlpchag.findCount;
-    const totalPages = Math.max(1, Math.ceil(characters.length / itemsPerPage));
+    totalPages = Math.max(1, Math.ceil(characters.length / itemsPerPage));
     
     page = Math.max(1, Math.min(page, totalPages));
+    currentPage = page;
     
     const start = (page - 1) * itemsPerPage;
     const end = Math.min(start + itemsPerPage, characters.length);
     
-    const pageNumberSpan = document.getElementById('pageNumber');
-    if (pageNumberSpan) {
-        pageNumberSpan.textContent = page;
+    const pageNumberInput = document.getElementById('pageNumberInput');
+    const totalPagesSpan = document.getElementById('totalPages');
+    
+    if (pageNumberInput) {
+        pageNumberInput.value = page;
+    }
+    
+    if (totalPagesSpan) {
+        totalPagesSpan.textContent = totalPages;
     }
     
     return characters.slice(start, end);
@@ -610,7 +619,7 @@ function handleNoSearchResults(options) {
         characterListContainer.innerHTML = '<div class="no-characters-found">No characters found matching your criteria</div>';
     } else {
         const prevPage = options.page - 1;
-        document.getElementById('pageNumber').textContent = prevPage;
+        document.getElementById('pageNumberInput').value = prevPage;
         executeCharacterSearch({ ...options, page: prevPage });
     }
 }
@@ -666,9 +675,11 @@ function setupTagHandlers() {
 }
 
 function resetPageAndSearch() {
-    const pageNumberSpan = document.getElementById('pageNumber');
-    if (pageNumberSpan) {
-        pageNumberSpan.textContent = '1';
+    currentPage = 1;
+    
+    const pageNumberInput = document.getElementById('pageNumberInput');
+    if (pageNumberInput) {
+        pageNumberInput.value = '1';
     }
     
     executeCharacterSearch({
@@ -788,7 +799,11 @@ function generateListLayout() {
                 <button id="prevPageButton">
                     <i class="fa-solid fa-chevron-left"></i> Previous
                 </button>
-                <span id="pageNumber">1</span>
+                <div class="page-input-container">
+                    <input type="number" id="pageNumberInput" min="1" value="1">
+                    <span class="page-separator">/</span>
+                    <span id="totalPages">1</span>
+                </div>
                 <button id="nextPageButton">
                     Next <i class="fa-solid fa-chevron-right"></i>
                 </button>
@@ -802,8 +817,6 @@ function generateListLayout() {
 
 async function initializeSearchAndNavigation() {
     refreshTagsDisplay();
-    
-    let currentPage = 1;
     
     await loadSettings();
     
@@ -823,7 +836,7 @@ async function initializeSearchAndNavigation() {
     const sortSelect = document.getElementById('sortSelect');
     const prevButton = document.getElementById('prevPageButton');
     const nextButton = document.getElementById('nextPageButton');
-    const pageNumberSpan = document.getElementById('pageNumber');
+    const pageNumberInput = document.getElementById('pageNumberInput');
     const randomCharacterBtn = document.getElementById('randomCharacterBtn');
     const settingsToggleBtn = document.getElementById('settingsToggleBtn');
     const batchToggleBtn = document.getElementById('batchToggleBtn');
@@ -880,7 +893,7 @@ async function initializeSearchAndNavigation() {
                 }
                 
                 currentPage = 1;
-                if (pageNumberSpan) pageNumberSpan.textContent = currentPage;
+                if (pageNumberInput) pageNumberInput.value = currentPage;
                 
                 executeCharacterSearch({
                     searchTerm: searchInput.value,
@@ -894,7 +907,7 @@ async function initializeSearchAndNavigation() {
     if (searchInput) {
         const handleSearch = debounce(() => {
             currentPage = 1;
-            if (pageNumberSpan) pageNumberSpan.textContent = currentPage;
+            if (pageNumberInput) pageNumberInput.value = currentPage;
             executeCharacterSearch({ 
                 searchTerm: searchInput.value,
                 searchType: currentSearchTypeValue,
@@ -1015,6 +1028,48 @@ async function initializeSearchAndNavigation() {
             lastFetchTime = 0;
             toastr.success('Cache cleared successfully');
             resetPageAndSearch();
+        });
+    }
+
+    if (pageNumberInput) {
+        pageNumberInput.addEventListener('change', async () => {
+            let newPage = parseInt(pageNumberInput.value);
+            if (isNaN(newPage) || newPage < 1) {
+                newPage = 1;
+                pageNumberInput.value = 1;
+            } else if (newPage > totalPages) {
+                newPage = totalPages;
+                pageNumberInput.value = totalPages;
+            }
+            
+            currentPage = newPage;
+            
+            await executeCharacterSearch({
+                searchTerm: searchInput?.value || '',
+                searchType: currentSearchTypeValue,
+                page: currentPage
+            });
+        });
+        
+        pageNumberInput.addEventListener('keypress', async (e) => {
+            if (e.key === 'Enter') {
+                let newPage = parseInt(pageNumberInput.value);
+                if (isNaN(newPage) || newPage < 1) {
+                    newPage = 1;
+                    pageNumberInput.value = 1;
+                } else if (newPage > totalPages) {
+                    newPage = totalPages;
+                    pageNumberInput.value = totalPages;
+                }
+                
+                currentPage = newPage;
+                
+                await executeCharacterSearch({
+                    searchTerm: searchInput?.value || '',
+                    searchType: currentSearchTypeValue,
+                    page: currentPage
+                });
+            }
         });
     }
 }
