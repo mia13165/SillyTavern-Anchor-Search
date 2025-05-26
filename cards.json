@@ -1,0 +1,17 @@
+{
+  "test/test1": {
+    "name": "update",
+    "author": "",
+    "datecreate": "2025-05-20T21:52:44.674575+00:00",
+    "dateupdate": "2025-05-20T21:52:44.674575+00:00",
+    "description": "the extension is outdated, please update in the extension menu\nhttps://rentry.org/aicg-bot-extension",
+    "greetings": [],
+    "examples": [],
+    "scenario": "",
+    "personality": "",
+    "creator_notes": null,
+    "image_url": "",
+    "tags": [],
+    "__format": "B"
+  }
+}

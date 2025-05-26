@@ -1,0 +1,11 @@
+{
+    "display_name": "aicg-bot-extension",
+    "loading_order": 6,
+    "requires": [],
+    "optional": [],
+    "js": "index.js",
+    "css": "style.css",
+    "author": "a",
+    "version": "1.1.0",
+    "homePage": "https://rentry.org/aicg-bot-extension"
+}
