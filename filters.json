@@ -1,4 +1,6 @@
 {
   "nsfw": [],
-  "tags": {}
+  "tags": {
+    "test/test1": []
+  }
 }
