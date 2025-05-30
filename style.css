@@ -147,6 +147,40 @@
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
 }
 
+.tag-button.excluded,
+.category-button.excluded {
+    opacity: 0.8;
+    background-color: #ff4444 !important;
+    text-decoration: line-through;
+    box-shadow: inset 0 0 0 2px rgba(255, 68, 68, 0.5);
+}
+
+.tag-button.excluded:hover,
+.category-button.excluded:hover {
+    opacity: 0.9;
+    background-color: #ff6666 !important;
+}
+
+.character-tag.excluded-tag {
+    background-color: #ff4444;
+    color: white;
+    text-decoration: line-through;
+}
+
+.character-tag.selected-tag {
+    background-color: var(--accent-color);
+    color: white;
+}
+
+.filter-help-text {
+    text-align: center;
+    color: var(--text-secondary);
+    font-size: 0.85em;
+    margin-top: 8px;
+    padding: 4px 0;
+    border-top: 1px solid var(--border-color);
+}
+
 .tags-container {
     display: flex;
     flex-direction: column;

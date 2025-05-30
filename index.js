@@ -45,6 +45,7 @@ const defaultSettings = {
 let mlpcharacters = [];
 let characterListContainer = null;
 let selectedTags = [];
+let excludedTags = [];
 let tagCounts = {};
 let cachedData = null;
 let lastFetchTime = 0;
@@ -210,11 +211,16 @@ function updateCharacterListInView(characters) {
 
             const tagElements = char.tags ? `
                 <div class="character-tags">
-                    ${char.tags.map(tag => `
-                        <span class="character-tag" data-tag="${sanitizeText(tag)}">
-                            ${sanitizeText(tag)} ${tagCounts[tag] ? `(${tagCounts[tag]})` : ''}
-                        </span>
-                    `).join('')}
+                    ${char.tags.map(tag => {
+                        const isExcluded = excludedTags.includes(tag);
+                        const isSelected = selectedTags.includes(tag);
+                        return `
+                            <span class="character-tag ${isExcluded ? 'excluded-tag' : ''} ${isSelected ? 'selected-tag' : ''}" 
+                                  data-tag="${sanitizeText(tag)}">
+                                ${sanitizeText(tag)} ${tagCounts[tag] ? `(${tagCounts[tag]})` : ''}
+                            </span>
+                        `;
+                    }).join('')}
                 </div>
             ` : '';
 
@@ -485,6 +491,43 @@ async function fetchCharactersBySearch({ searchTerm, searchType = 'name', page =
             });
         }
 
+        const excludedRegularTags = excludedTags.filter(tag => 
+            !CATEGORIES.some(cat => cat.id === tag));
+            
+        if (excludedRegularTags.length > 0) {
+            filteredCharacters = filteredCharacters.filter(char => {
+                return !excludedRegularTags.some(tag => 
+                    char.tags.some(cardTag => 
+                        cardTag.toLowerCase() === tag.toLowerCase()
+                    )
+                );
+            });
+        }
+
+        const excludedCategories = excludedTags.filter(tag => 
+            CATEGORIES.some(cat => cat.id === tag));
+            
+        if (excludedCategories.length > 0) {
+            filteredCharacters = filteredCharacters.filter(char => {
+                const normalizedPath = char.path.replace(/\\/g, '/');
+                return !excludedCategories.some(category => {
+                    if (category === 'NSFW') {
+                        const nsfwPaths = filters['nsfw'] || [];
+                        return nsfwPaths.some(path => {
+                            const normalizedFilterPath = path.replace(/\\/g, '/');
+                            return normalizedFilterPath === normalizedPath;
+                        });
+                    } else {
+                        const categoryPaths = filters[category] || [];
+                        return categoryPaths.some(path => {
+                            const normalizedFilterPath = path.replace(/\\/g, '/');
+                            return normalizedFilterPath === normalizedPath;
+                        });
+                    }
+                });
+            });
+        }
+
         if (searchTerm) {
             const term = searchTerm.toLowerCase();
             filteredCharacters = filteredCharacters.filter(char => {
@@ -631,11 +674,46 @@ function setupTagHandlers() {
             if (e.target.classList.contains('remove-tag')) return;
             
             const tagId = button.dataset.tag;
-            button.classList.toggle('selected');
             
-            selectedTags = Array.from(document.querySelectorAll('.tag-button.selected, .category-button.selected'))
-                .map(btn => btn.dataset.tag);
+            if (e.shiftKey) {
+                if (excludedTags.includes(tagId)) {
+                    excludedTags = excludedTags.filter(t => t !== tagId);
+                    button.classList.remove('excluded');
+                } else {
+                    excludedTags.push(tagId);
+                    button.classList.add('excluded');
+                    selectedTags = selectedTags.filter(t => t !== tagId);
+                    button.classList.remove('selected');
+                }
+            } else {
+                if (selectedTags.includes(tagId)) {
+                    selectedTags = selectedTags.filter(t => t !== tagId);
+                    button.classList.remove('selected');
+                } else {
+                    selectedTags.push(tagId);
+                    button.classList.add('selected');
+                    excludedTags = excludedTags.filter(t => t !== tagId);
+                    button.classList.remove('excluded');
+                }
+            }
 
+            resetPageAndSearch();
+        });
+
+        button.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+            const tagId = button.dataset.tag;
+            
+            if (excludedTags.includes(tagId)) {
+                excludedTags = excludedTags.filter(t => t !== tagId);
+                button.classList.remove('excluded');
+            } else {
+                excludedTags.push(tagId);
+                button.classList.add('excluded');
+                selectedTags = selectedTags.filter(t => t !== tagId);
+                button.classList.remove('selected');
+            }
+            
             resetPageAndSearch();
         });
     });
@@ -667,8 +745,10 @@ function setupTagHandlers() {
 
     document.querySelector('.clear-tags-button')?.addEventListener('click', () => {
         selectedTags = [];
+        excludedTags = [];
         document.querySelectorAll('.tag-button, .category-button').forEach(btn => {
             btn.classList.remove('selected');
+            btn.classList.remove('excluded');
         });
         resetPageAndSearch();
     });
@@ -773,7 +853,8 @@ function generateListLayout() {
                         ${CATEGORIES.map(category => `
                             <button class="category-button" 
                                 data-tag="${category.id}"
-                                style="--category-color: ${category.color}">
+                                style="--category-color: ${category.color}"
+                                title="Click to include, Shift+Click or Right-click to exclude">
                                 ${category.label} ${extension_settings.mlpchag.showTagCount ? `<span class="tag-count">(0)</span>` : ''}
                             </button>
                         `).join('')}
@@ -781,6 +862,9 @@ function generateListLayout() {
                     <div class="tags-divider">Types</div>
                     <div class="tags-row">
                         <!-- Tags will be dynamically inserted here -->
+                    </div>
+                    <div class="filter-help-text">
+                        <small>Click to include • Shift+Click or Right-click to exclude</small>
                     </div>
                     <button class="clear-tags-button">Clear All Filters</button>
                 </div>
@@ -1077,6 +1161,8 @@ async function initializeSearchAndNavigation() {
 function openSearchPopup() {
     batchMode = false;
     selectedPaths = [];
+    selectedTags = [];
+    excludedTags = [];
     cachedData = null;
     lastFetchTime = 0;
     
@@ -1146,10 +1232,12 @@ function refreshTagsDisplay() {
     
     TAGS.forEach(tag => {
         const isSelected = selectedTags.includes(tag.id);
+        const isExcluded = excludedTags.includes(tag.id);
         tagsRow.innerHTML += `
-            <button class="tag-button ${isSelected ? 'selected' : ''}" 
+            <button class="tag-button ${isSelected ? 'selected' : ''} ${isExcluded ? 'excluded' : ''}" 
                 data-tag="${tag.id}"
-                style="--tag-color: ${tag.color}">
+                style="--tag-color: ${tag.color}"
+                title="Click to include, Shift+Click or Right-click to exclude">
                 ${tag.label} ${extension_settings.mlpchag.showTagCount ? `<span class="tag-count">(${tagCounts[tag.id] || 0})</span>` : ''}
             </button>
         `;
@@ -1157,10 +1245,12 @@ function refreshTagsDisplay() {
     
     extension_settings.mlpchag.customTags.forEach(tag => {
         const isSelected = selectedTags.includes(tag.id);
+        const isExcluded = excludedTags.includes(tag.id);
         tagsRow.innerHTML += `
-            <button class="tag-button custom-tag ${isSelected ? 'selected' : ''}" 
+            <button class="tag-button custom-tag ${isSelected ? 'selected' : ''} ${isExcluded ? 'excluded' : ''}" 
                 data-tag="${tag.id}"
-                style="--tag-color: ${tag.color}">
+                style="--tag-color: ${tag.color}"
+                title="Click to include, Shift+Click or Right-click to exclude">
                 ${tag.label} ${extension_settings.mlpchag.showTagCount ? `<span class="tag-count">(${tagCounts[tag.id] || 0})</span>` : ''}
                 <span class="remove-tag" data-tag-id="${tag.id}">×</span>
             </button>
@@ -1188,3 +1278,4 @@ jQuery(async () => {
     
     await loadSettings();
 });
+
