@@ -4,6 +4,7 @@ import {
 } from "../../../../script.js";
 import { debounce } from "../../../utils.js";
 import { extension_settings } from "../../../extensions.js";
+import { Fuse } from '../../../lib.js';
 
 const API_ENDPOINT = "https://raw.githubusercontent.com/mia13165/Cards/refs/heads/main";
 const MARES_ENDPOINT = `${API_ENDPOINT}/cards.json`;
@@ -95,7 +96,7 @@ const defaultSettings = {
     autoLoadTags: true,
     showTagCount: true,
     customTags: [],
-    };
+};
     
 let mlpcharacters = [];
 let characterListContainer = null;
@@ -233,8 +234,7 @@ function createPreviewModal(character) {
                                 character.greetings.map((greeting, index) => `
                                     <div class="greeting ${index === 0 ? 'active' : ''}">${sanitizeText(greeting)}</div>
                                 `).join('') :
-                                `<div class="greeting active">${sanitizeText(character.greetings)}</div>`
-}
+                                `<div class="greeting active">${sanitizeText(character.greetings)}</div>`}
                             ${Array.isArray(character.greetings) && character.greetings.length > 1 ? `
                                 <div class="greeting-nav">
                                     ${character.greetings.map((_, index) => `
@@ -268,19 +268,23 @@ function updateCharacterListInView(characters) {
                 return '';
             }
 
+            if (char.url === 'img/ai4.png' || !char.url) {
+            return '';
+        }
+
             const tagElements = char.tags ? `
                 <div class="character-tags">
                     ${char.tags.map(tag => {
                         const isExcluded = excludedTags.includes(tag);
                         const isSelected = selectedTags.includes(tag);
-                        return `
+    return `
                             <span class="character-tag ${isExcluded ? 'excluded-tag' : ''} ${isSelected ? 'selected-tag' : ''}"
                                   data-tag="${sanitizeText(tag)}">
                                 ${sanitizeText(tag)} ${tagCounts[tag] ? `(${tagCounts[tag]})` : ''}
                             </span>
-                        `;
+        `;
                     }).join('')}
-                </div>
+        </div>
             ` : '';
 
             return `
@@ -301,10 +305,10 @@ function updateCharacterListInView(characters) {
                         title="Download ${sanitizeText(char.name)}">
                     </div>
                 </div>
-            `;
+    `;
         } catch (error) {
             return '';
-        }
+}
     }).filter(Boolean);
 
     if (characterElements.length === 0) {
@@ -472,11 +476,33 @@ async function fetchCharactersBySearch({
             }
         }
 
+        const seenDescriptions = new Set();
+        const seenNameAuthorPairs = new Set();
+
         let allCharacters = Object.entries(maresData)
             .filter(([key, value]) => {
                 if (!value || typeof value !== 'object' || !value.name || !value.author || value.error) {
                     return false;
                 }
+
+                if (value.image_url === 'img/ai4.png' || !value.image_url) {
+                    return false;
+                }
+
+                if (value.description && value.description.trim().length > 10) {
+                    const descriptionKey = value.description.trim().toLowerCase();
+                    if (seenDescriptions.has(descriptionKey)) {
+                        return false;
+                    }
+                    seenDescriptions.add(descriptionKey);
+                }
+
+                const nameAuthorKey = `${value.name.trim().toLowerCase()}_${value.author.trim().toLowerCase()}`;
+                if (seenNameAuthorPairs.has(nameAuthorKey)) {
+                    return false;
+                }
+                seenNameAuthorPairs.add(nameAuthorKey);
+
                 return true;
             })
             .map(([key, value]) => {
@@ -617,36 +643,10 @@ async function fetchCharactersBySearch({
                         }
                     });
                 } catch (e) {
-                    const term = searchTerm.toLowerCase();
-                    filteredCharacters = filteredCharacters.filter(char => {
-                        switch (searchType) {
-                            case 'name':
-                                return char.name.toLowerCase().includes(term);
-                            case 'description':
-                                return char.description && char.description.toLowerCase().includes(term);
-                            case 'author':
-                                return char.author.toLowerCase().includes(term);
-                            default:
-                                return char.name.toLowerCase().includes(term) ||
-                                    char.author.toLowerCase().includes(term);
-                        }
-                    });
+                    filteredCharacters = performFuzzySearch(filteredCharacters, searchTerm, searchType);
                 }
             } else {
-                const term = searchTerm.toLowerCase();
-                filteredCharacters = filteredCharacters.filter(char => {
-                    switch (searchType) {
-                        case 'name':
-                            return char.name.toLowerCase().includes(term);
-                        case 'description':
-                            return char.description && char.description.toLowerCase().includes(term);
-                        case 'author':
-                            return char.author.toLowerCase().includes(term);
-                        default:
-                            return char.name.toLowerCase().includes(term) ||
-                                char.author.toLowerCase().includes(term);
-                    }
-                });
+                filteredCharacters = performFuzzySearch(filteredCharacters, searchTerm, searchType);
             }
         } else if (searchType === 'description') {
             filteredCharacters = filteredCharacters.filter(char =>
@@ -675,6 +675,39 @@ async function fetchCharactersBySearch({
         }
         throw error;
     }
+}
+
+function performFuzzySearch(characters, searchTerm, searchType) {
+    if (!searchTerm || characters.length === 0) return characters;
+
+    let fuseOptions = {
+        includeScore: true,
+        threshold: 0.4,
+        minMatchCharLength: 2,
+        keys: []
+    };
+
+    switch (searchType) {
+        case 'name':
+            fuseOptions.keys = ['name'];
+            break;
+        case 'description':
+            fuseOptions.keys = ['description'];
+            break;
+        case 'author':
+            fuseOptions.keys = ['author'];
+            break;
+        default:
+            fuseOptions.keys = [
+                { name: 'name', weight: 0.7 },
+                { name: 'author', weight: 0.3 }
+            ];
+    }
+
+    const fuse = new Fuse(characters, fuseOptions);
+    const results = fuse.search(searchTerm);
+
+    return results.map(result => result.item);
 }
 
 function updateTagCounts(characters, filters) {
@@ -901,7 +934,7 @@ function generateListLayout() {
                         <button id="searchTypeButton" class="search-type-button">
                             <span id="currentSearchType">Search by Name</span>
                             <i class="fa-solid fa-caret-down"></i>
-                        </button>
+        </button>
                         <div id="searchTypeDropdown" class="search-type-dropdown" style="display: none;">
                             <div class="dropdown-option" data-value="name">Search by Name</div>
                             <div class="dropdown-option" data-value="description">Search by Description</div>
@@ -1375,6 +1408,278 @@ function refreshTagsDisplay() {
     setupTagHandlers();
 }
 
+function createCharacterFingerprint(character) {
+    const elements = [];
+
+    if (character.description && character.description.trim().length > 20) {
+        const normalizedDesc = character.description
+            .toLowerCase()
+            .replace(/\s+/g, ' ')
+            .replace(/[^\w\s]/g, '')
+            .trim();
+        elements.push(normalizedDesc);
+    }
+
+    if (elements.length === 0) {
+        elements.push(character.name.toLowerCase().trim());
+        elements.push(character.author.toLowerCase().trim());
+
+        if (character.personality && character.personality.length > 20) {
+            elements.push(character.personality.substring(0, 50).toLowerCase());
+        }
+        if (character.scenario && character.scenario.length > 20) {
+            elements.push(character.scenario.substring(0, 50).toLowerCase());
+        }
+    }
+
+    return elements.join('_');
+}
+
+async function fetchCharactersBySearchWithFingerprint({
+    searchTerm,
+    searchType = 'name',
+    page = 1,
+    forceReload = false
+}) {
+    try {
+        const now = Date.DATE_NODE;
+        const shouldUseCache = !forceReload &&
+            extension_settings.mlpchag.cacheEnabled &&
+            cachedData &&
+            (now - lastFetchTime < CACHE_DURATION);
+
+        let maresData, filters;
+
+        if (shouldUseCache) {
+            [maresData, filters] = cachedData;
+        } else {
+            if (characterListContainer) {
+                characterListContainer.innerHTML = '<div class="loading-spinner"><div class="spinner"></div><p>Loading characters...</p></div>';
+            }
+
+            try {
+                const [maresResponse, filtersResponse] = await Promise.all([
+                    fetch(MARES_ENDPOINT, {
+                        cache: "no-cache"
+                    }),
+                    fetch(FILTERS_ENDPOINT, {
+                        cache: "no-cache"
+                    })
+                ]);
+
+                if (!maresResponse.ok) {
+                    throw new Error(`Failed to fetch characters: ${maresResponse.status} ${maresResponse.statusText}`);
+                }
+                if (!filtersResponse.ok) {
+                    throw new Error(`Failed to fetch filters: ${filtersResponse.status} ${filtersResponse.statusText}`);
+                }
+
+                [maresData, filters] = await Promise.all([
+                    maresResponse.json(),
+                    filtersResponse.json()
+                ]);
+
+                cachedData = [maresData, filters];
+                lastFetchTime = now;
+            } catch (error) {
+                if (characterListContainer) {
+                    characterListContainer.innerHTML = `<div class="error">Error fetching data: ${error.message}</div>`;
+                }
+                throw error;
+            }
+        }
+
+        const seenFingerprints = new Set();
+
+        let allCharacters = Object.entries(maresData)
+            .filter(([key, value]) => {
+                if (!value || typeof value !== 'object' || !value.name || !value.author || value.error) {
+                    return false;
+                }
+                if (value.image_url === 'img/ai4.png' || !value.image_url) {
+                    return false;
+                }
+
+                const fingerprint = createCharacterFingerprint(value);
+                if (seenFingerprints.has(fingerprint)) {
+                    return false;
+                }
+                seenFingerprints.add(fingerprint);
+
+                return true;
+            })
+            .map(([key, value]) => {
+                const normalizedKey = key.replace(/\\/g, '/');
+                const backslashKey = key.replace(/\//g, '\\');
+
+                return {
+                    ...value,
+                    path: key,
+                    url: value.image_url || 'img/ai4.png',
+                    name: value.name || 'Unknown',
+                    author: value.author || 'Unknown',
+                    description: value.description || '',
+                    dateupdate: value.dateupdate || new Date().toISOString(),
+                    datecreate: value.datecreate || value.dateupdate || new Date().toISOString(),
+                    tags: filters.tags[normalizedKey] || filters.tags[backslashKey] || [],
+                    categories: CATEGORIES.filter(category => {
+                        const categoryPaths = filters[category.id] || [];
+                        return categoryPaths.some(path =>
+                            path.replace(/\\/g, '/') === normalizedKey);
+                    }).map(c => c.id)
+                };
+            });
+
+        mlpcharacters = [...allCharacters];
+        updateTagCounts(allCharacters, filters);
+
+        let filteredCharacters = [...allCharacters];
+
+        if (!extension_settings.mlpchag.showNSFW) {
+            const nsfwPaths = filters['nsfw'] || [];
+            filteredCharacters = filteredCharacters.filter(char => {
+                const normalizedPath = char.path.replace(/\\/g, '/');
+                return !nsfwPaths.some(path => {
+                    const normalizedFilterPath = path.replace(/\\/g, '/');
+                    return normalizedFilterPath === normalizedPath;
+                });
+            });
+        }
+
+        const selectedCategories = selectedTags.filter(tag =>
+            CATEGORIES.some(cat => cat.id === tag));
+
+        if (selectedCategories.length > 0) {
+            if (selectedCategories.includes('NSFW')) {
+                const nsfwPaths = filters['nsfw'] || [];
+                filteredCharacters = filteredCharacters.filter(char => {
+                    const normalizedPath = char.path.replace(/\\/g, '/');
+                    const isNSFW = nsfwPaths.some(path => {
+                        const normalizedFilterPath = path.replace(/\\/g, '/');
+                        return normalizedFilterPath === normalizedPath;
+                    });
+
+                    return isNSFW;
+                });
+            } else {
+                filteredCharacters = filteredCharacters.filter(char => {
+                    const normalizedPath = char.path.replace(/\\/g, '/');
+                    return selectedCategories.some(category => {
+                        const categoryPaths = filters[category] || [];
+                        return categoryPaths.some(path => {
+                            const normalizedFilterPath = path.replace(/\\/g, '/');
+                            return normalizedFilterPath === normalizedPath;
+                        });
+                    });
+                });
+            }
+        }
+
+        const selectedRegularTags = selectedTags.filter(tag =>
+            !CATEGORIES.some(cat => cat.id === tag));
+
+        if (selectedRegularTags.length > 0) {
+            filteredCharacters = filteredCharacters.filter(char => {
+                return selectedRegularTags.every(tag =>
+                    char.tags.some(cardTag =>
+                        cardTag.toLowerCase() === tag.toLowerCase()
+                    )
+                );
+            });
+        }
+
+        const excludedRegularTags = excludedTags.filter(tag =>
+            !CATEGORIES.some(cat => cat.id === tag));
+
+        if (excludedRegularTags.length > 0) {
+            filteredCharacters = filteredCharacters.filter(char => {
+                return !excludedRegularTags.some(tag =>
+                    char.tags.some(cardTag =>
+                        cardTag.toLowerCase() === tag.toLowerCase()
+                    )
+                );
+            });
+        }
+
+        const excludedCategories = excludedTags.filter(tag =>
+            CATEGORIES.some(cat => cat.id === tag));
+
+        if (excludedCategories.length > 0) {
+            filteredCharacters = filteredCharacters.filter(char => {
+                const normalizedPath = char.path.replace(/\\/g, '/');
+                return !excludedCategories.some(category => {
+                    if (category === 'NSFW') {
+                        const nsfwPaths = filters['nsfw'] || [];
+                        return nsfwPaths.some(path => {
+                            const normalizedFilterPath = path.replace(/\\/g, '/');
+                            return normalizedFilterPath === normalizedPath;
+                        });
+                    } else {
+                        const categoryPaths = filters[category] || [];
+                        return categoryPaths.some(path => {
+                            const normalizedFilterPath = path.replace(/\\/g, '/');
+                            return normalizedFilterPath === normalizedPath;
+                        });
+                    }
+                });
+            });
+        }
+
+        if (searchTerm) {
+            const regexMatch = searchTerm.match(/^\/(.+?)\/([gimsuvy]*)$/);
+
+            if (regexMatch) {
+                try {
+                    const [, pattern, flags] = regexMatch;
+                    const regex = new RegExp(pattern, flags);
+
+                    filteredCharacters = filteredCharacters.filter(char => {
+                        switch (searchType) {
+                            case 'name':
+                                return regex.test(char.name);
+                            case 'description':
+                                return char.description && regex.test(char.description);
+                            case 'author':
+                                return regex.test(char.author);
+                            default:
+                                return regex.test(char.name) || regex.test(char.author);
+                        }
+                    });
+                } catch (e) {
+                    filteredCharacters = performFuzzySearch(filteredCharacters, searchTerm, searchType);
+                }
+            } else {
+                filteredCharacters = performFuzzySearch(filteredCharacters, searchTerm, searchType);
+            }
+        } else if (searchType === 'description') {
+            filteredCharacters = filteredCharacters.filter(char =>
+                char.description && char.description.trim() !== '');
+        }
+
+        applySorting(filteredCharacters);
+
+        const resultCountSpan = document.getElementById('resultCount');
+        if (resultCountSpan) {
+            resultCountSpan.textContent = filteredCharacters.length;
+        }
+
+        const paginatedResults = paginateResults(filteredCharacters, page);
+
+        if (paginatedResults.length === 0 && page > 1 && filteredCharacters.length > 0) {
+            const maxPage = Math.ceil(filteredCharacters.length / extension_settings.mlpchag.findCount);
+            return paginateResults(filteredCharacters, maxPage);
+        }
+
+        return paginatedResults;
+
+    } catch (error) {
+        if (characterListContainer) {
+            characterListContainer.innerHTML = `<div class="error">Error: ${error.message}</div>`;
+        }
+        throw error;
+    }
+}
+
 jQuery(async () => {
     $('#external_import_button').after(`
         <button id="search-mlpchag" class="menu_button" title="Search anchor">
@@ -1386,3 +1691,4 @@ jQuery(async () => {
 
     await loadSettings();
 });
+
