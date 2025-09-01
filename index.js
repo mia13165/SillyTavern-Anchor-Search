@@ -1,6 +1,7 @@
 import {
     processDroppedFiles,
-    callPopup
+    callPopup,
+    getRequestHeaders,
 } from "../../../../script.js";
 import { debounce } from "../../../utils.js";
 import { extension_settings } from "../../../extensions.js";
@@ -84,6 +85,10 @@ const TAGS = [{
     id: 'Loli',
     label: 'Loli',
     color: '#b3997a'
+},  {
+    id: 'chub',
+    label: 'chub',
+    color: '#7a87b3ff'
 }, ].map(tag => ({ ...tag,
         selected: false
 }));
@@ -143,22 +148,48 @@ async function downloadCharacter(cardPath) {
         }
 
         const imageUrl = character.image_url;
-        const response = await fetch(imageUrl);
-        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-
-        const blob = await response.blob();
-        const file = new File([blob], cardPath, {
-            type: 'image/png'
+        
+        const request = await fetch('/api/content/importURL', {
+            method: 'POST',
+            headers: getRequestHeaders(),
+            body: JSON.stringify({ url: imageUrl }),
         });
 
-        processDroppedFiles([file]);
+        if (!request.ok) {
+            toastr.info(request.statusText, 'Character import failed');
+            console.error('Character import failed', request.status, request.statusText);
+            return;
+        }
+
+        const data = await request.blob();
+        const customContentType = request.headers.get('X-Custom-Content-Type');
+        const contentDisposition = request.headers.get('Content-Disposition');
+        
+        let fileName = cardPath;
+        if (contentDisposition && contentDisposition.includes('filename=')) {
+            fileName = contentDisposition.split('filename=')[1].replace(/"/g, '');
+        }
+        
+        const file = new File([data], fileName, { type: data.type });
+
+        switch (customContentType) {
+            case 'character':
+                await processDroppedFiles([file]);
+                break;
+            default:
+                await processDroppedFiles([file]);
+                break;
+        }
+        
         toastr.success('Character downloaded successfully', '', {
             timeOut: 2000
         });
     } catch (error) {
+        console.error('Failed to download character:', error);
         toastr.error('Failed to download character');
     }
 }
+
 
 function getRandomCharacter() {
     if (!mlpcharacters || mlpcharacters.length === 0) {
@@ -1199,9 +1230,31 @@ async function initializeSearchAndNavigation() {
         });
 
         downloadSelectedBtn.addEventListener('click', async () => {
+            let successCount = 0;
+            let failCount = 0;
+            
             for (const path of selectedPaths) {
-                await downloadCharacter(path);
+                try {
+                    await downloadCharacter(path);
+                    successCount++;
+                } catch (error) {
+                    failCount++;
+                    console.error(`Failed to download ${path}:`, error);
+                }
             }
+            
+            if (successCount > 0) {
+                toastr.success(`Successfully downloaded ${successCount} character(s)`);
+            }
+            if (failCount > 0) {
+                toastr.warning(`Failed to download ${failCount} character(s)`);
+            }
+            
+            // Reset batch mode after download
+            batchMode = false;
+            selectedPaths = [];
+            downloadSelectedBtn.style.display = 'none';
+            updateCharacterListInView(mlpcharacters);
         });
     }
 
